@@ -244,6 +244,7 @@ docker service create \
 --name myweb3 \
 --update-delay 10s \
 --update-parallelism 2 \
+--update-failure-action continue \
 nginx:1.10 
 ```
 
@@ -251,3 +252,89 @@ nginx:1.10
 # 서비스의 롤링 업데이트 설정 확인
 docker service inspect --pretty [NAME]
 ```
+
+```
+# 서비스 롤링 업데이트 후, 서비스를 롤링 업데이트 전으로 되돌리는 rollback
+docker service rollback [SERVICE_NAME]
+```
+
+#### [3.2.3.5] 서비스 컨테이너에 설정 정보 전달하기: config, secret
+애플리케이션을 외부에 서비스하려면 환경에 맞춘 설정 파일이나 값들이 컨테이너 내부에 미리 준비되어 있어야 한다. 설정값을 이미지 내부에 정적으로 저장한 뒤 컨테이너로서 실행하도록 배포할 수도 있지만, 이미지에 내장된 설정값을 쉽게 변경할 수 없기 때문에 확장성과 유연성이 떨어진다.
+
+<h4> Docker에서의 설정 </h4>
+
+- "-v 옵션" : 볼륨설정을 통한 설정
+- "-e 옵션" : 환경변수를 통한 설정
+ 
+서버 클러스터(스웜모드 etc)에서 파일 공유를 위해 설정 파일을 호스트마다 마련해두는 것은 매우 비효율적인 일이다. 뿐만 아니라 민감한 정보(비밀번호 등)를 환경변수로 설정하는 것은 보안상으로도 매우 바람직하지 않다.
+
+이를 위해 스웜모드는 secret과 config 라는 기능을 제공한다. secret은 비밀번호나 ssh 키, 인증서 같은 보안에 민감한 데이터를 전송하기 위해 사용한다. config는 암호화할 필요가 없는 설정값들을 위해서 사용한다.
+
+> secret과 config 는 Swarm 모드에서만 지원한다.
+
+<h4> secret </h4>
+
+- 생성된 secret을 조회해도 실제 값을 확인할 수는 없음.
+  - secret 파일은 컨테이너에 배포된 뒤에도 파일시스템이 아닌 메모리에 저장
+  - 서비스 컨테이너가 삭제될 경우 secret도 함께 삭제되는 휘발성을 띠게됨
+
+
+```
+# Secret 생성
+docker secret create [KEY_NAME] [VALUE]
+# example
+# echo asdf1234 | docker secret create my_mysql_password -
+```
+--secret 옵션을 통해 컨테이너로 공유된 값은 기본적으로 컨테이너 내부의 /run/secrets/ 디렉토리에 마운트 된다.
+
+source에 secret의 이름을 입력, target에는 컨테이너 내부에서 보여질 secret의 이름을 입력하면 된다.
+
+```
+# Usage example
+# --secret 옵션에서 target은 절대경로로 수동설정도 가능
+docker service create \
+--name mysql \
+--replicas 1 \
+--secret source=my_mysql_password, target=mysql_root_password \
+--secret source=my_mysql_password, target=mysql_password \
+-e MYSQL_ROOT_PASSWORD_FILE="/run/secrets/mysql_root_password" \
+-e MYSQL_PASSWORD_FILE="/run/secrets/mysql_password" \
+-e MYSQL_DATABASE="wordpress" \
+mysql:5.7
+```
+
+(고려할점) 
+- 컨테이너 내부의 애플리케이션이 특정 경로의 파일 값을 참조할 수 있도록 설계해야 함.
+  - 설정 변수를 파일로부터 동적으로 읽어올 수 있도록 설계하면 secret, config 의 장점을 활용할 수 있음
+
+
+<h4> config </h4>
+config를 사용하는 방법은 secret과 거의 동일하다.
+
+하지만, 'docker config inspect [CONFIG_NAME]' 으로 조회해보면 secret과는 달리 <b>Data</b> 라는 항목이 존재하는 것을 확인할 수 있다. config는 입력된 값을 base64로 인코딩한 뒤 저장하며, base64 명령어를 통해 디코딩하면 원래의 값을 확인할 수 있다.
+
+즉, data 부분의 해시값을 base64로 디코딩하면 원문을 볼 수 있다.
+
+```
+# CONFIG 설정
+# docker config create [KEY_NAME] [VALUE]
+docker config create registry-config config.yml
+
+# 사용법
+docker service create --name yml_registry -p 5000:5000 \
+--config source=registry-config,target=/etc/docker/registry/config.yml \
+registry:2.6
+```
+
+서비스 컨테이너가 새로운 값을 사용해야 한다면 docker service update 명령어의
+- --config-rm
+- --config-add
+- --secret-rm
+- --secret-add
+
+을 통해서 서비스가 사용하는 secret이나 config를 추가하고 삭제할 수 있다. 이를 잘 활용하면 이미지를 다시 빌드할 필요 없이도 여러 설정값의 애플리케이션을 쉽게 사용할 수 있다.
+
+#### [3.2.3.6] 도커 스웜 네트워크
+스웜모드는 도커의 네트워크와는 조금 다른 방법을 사용한다. 
+
+스웜모드는 여러 개의 도커 엔진에 같은 컨테이너를 분산해서 할당하기 때문에 각 도커 데몬의 네트워크가 하나로 묶인, 이른바 네트워크 풀이 필요하다. 또한 서비스를 외부로 노출했을 때 어느 노드로 접근하더라도 해당 서비스의 컨테이너에 접근할 수 있게 라우팅 기능이 필요하다. 이런 기능은 스웜모드가 자체적으로 지원하는 네트워크 드라이버를 통해 사용할 수 있다.
