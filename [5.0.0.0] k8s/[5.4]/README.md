@@ -46,5 +46,44 @@ kubeadm init --apiserver-advertise-address [IP] \
 --pod-network-cidr=[IP] --cri-socket /run/containerd/containerd.sock
 ```
 
-kubeadm init --apiserver-advertise-address 192.168.0.33 \
---pod-network-cidr=192.168.0.0/16 --cri-socket /run/containerd/containerd.sock
+k8s 1.20 버전부터, docker를 CRI로 사용할 수 없도록 바뀌었다. 따라서 `--cri-socket`  을 통해서 별도 지정이 필요
+
+<h5> 4. 컨테이너 네트워크 애드온 설치 </h5>
+쿠버네티스의 컨테이너 간 통신을 위해서 calico, flannel, weavyNet 등 여러 오버레이 네트워크를 사용할 수 있다.
+
+``` bash
+# Calico 설치
+kubectl apply -f https://docs.projectcalico.org/v3.22/manifests/calico.yaml
+```
+
+
+> Calico 의 경우, 기본 `--pod-network-cidr` 을 `192.168.0.0/16` 으로 설정한다. 이외에 별도로 설정한 경우, 추가 설정이 필요하다
+> Calico.yaml 을 다운받아, CALICO_IPV4POOL_CIDR 환경변수의 각주를 해제한 후 적절한 IP 대역 입력
+
+이후 다음의 명령어를 통해서 설치가 정상적으로 완료됐는지 확인 및 핵심 컴포턴트들의 실행목록을 확인
+- `kubectl get pods --namespace kube-system`
+
+``` bash
+# 쿠버네티스 삭제 및 초기화
+sudo kubeadm reset
+
+# /etc/kubernetes 의 폴더에 기존 정보들이 남아있음, 따라서 백업|삭제 필요
+sudo rm -rf /etc/kubernetes/*
+```
+
+
+#### [5.4.2.0] kops 로 AWS 설치하기 
+
+kops 는 클라우드 플랫폼에서 k8s 를 쉽게 설치할 수 있도록 도와주는 도구이다.
+
+kubeadm 은 쿠버네티스를 설치할 서버 인프라를 직접 마련해야 하지만, kops 는 서버 인스턴스와 네트워크 리소스 등을 클라우드에서 자동으로 생성해 쿠버네티스를 설치한다.
+
+- 쉽게 서버 인프라를 프로비저닝해 k8s를 설치할 수 있다는 것이 특징이다.
+
+(생략)
+
+#### [5.4.3.0] 구글 클라우드 플랫폼의 GKE로 쿠버네티스 사용하기
+
+kubeadm 이나 kops 로 쿠버네티스를 설치하는 것이 어렵다면, 설치부터 관리까지 전부 클라우드 서비스로 제공하는 EKS, GKE 등의 매니지드 서비스를 사용하는 것도 좋다.
+
+(생략)
