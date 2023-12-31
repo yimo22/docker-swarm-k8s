@@ -84,3 +84,71 @@ spec:
 
 > `spec.volumes` : YML 파일에서 사용할 볼륨의 목록을 정의
 > `spec.containers.volumeMounts` : volumes 항목에서 정의된 볼륨을 컨테이너 내부의 어떤 디렉터리에 마운트할 것인지 명시
+
+컨피그맵의 모든 K-V 쌍 데이터가 마운트됐으며, 파일 이름은 키의 이름과 같다.
+> ConfigMap 과 같은 K8s 리소스의 데이터를 파드 내부 디렉터리에 위치시키는 것을 k8s 공식 문서에서는 투사(Projection) 이라고 한다.
+
+`selective-volume-configmap.yml` 에서 원하는 K-V 데이터만 선택해서 파드에 파일로 가져올 수도 있다.
+
+`items` : ConfigMap 에서 가져올 K-V의 목록을 의미
+`path` : 최종적으로 디렉터리에 위치할 파일의 이름을 입력하는 항목
+
+#### [7.2.1.3] 파일로부터 ConfigMap 생성하기
+컨피그맵을 볼륨으로 파드에 제공할 때는 대부분 설정 파일 그 자체를 컨피그맵으로 사용하는 경우가 많다. 이러한 경우를 위해 k8s 에서는 컨피그맵을 파일로부터 생성하는 기능을 제공한다.
+
+단순 문자열 값을 이용해 컨피그맵을 생성할 때는 `kubectl create configmap --from-literal ` 했지만, 파일로부터 컨피그맵을 생성하려면 `--from-file` 옵션을 사용하면 된다.
+
+`--from-file` 옵션에서 별도의 키를 지정하지 않으면 파일 이름이 Key 이고, 파일의 내용이 Value로 저장된다.
+별도의 키로 지정할 때는 `--from-file ${KEY}=index.html` 과 같이 사용한다.
+
+`--from-env-file` 옵션을 통해서 여러 개의 K-V 형태의 내용으로 구성된 설정 파일을 한꺼번에 컨피그맵으로 가져올 수 있다.
+
+일단 컨피그맵으로 생성되고 나면, 컨피그맵의 내용이 파일이든지 문자열이든지 상관없이 사용 방법 자체는 똑같다.
+
+> 정적파일을 파드에 제공하려면 `--from-file` 을 사용하는것이 편리할 수 있고, 여러 개의 환경 변수를 파드로 가져와야 한다면 `--from-env-file` 옵션을 사용하는 것이 편리할 수 있다.
+
+#### [7.2.1.4] YML 파일로 컨피그맵 정의하기
+컨피그맵을 반드시 명령어를 통해 생성해야 하는 것은 아니다.
+
+``` bash
+# 필요한 yml 출력
+kubectl create configmap my-configmap \
+--from-literal mykey=myvalue \
+--dry-run -o yaml
+
+# 필요 yml파일 생성
+kubectl creaate configmap my-configmap \
+--from-literal mykey=mvalue --dry-run -o yaml > my-config.yml
+
+# 적용
+kubectl apply -f my-configmap.yml
+```
+
+> dry run 이란 특정 작업의 실행 가능 여부를 검토하는 명령어 또는 API를 의미한다. 각 명령어에 `--dry-run` 옵션을 추가하면 실행 가능 여부를 확인할 수 있으며 실제로 k8s 리소스를 생성하지는 않는다.
+
+ConfigMap 에서 K-V 데이터가 너무 많아지면 YML 파일의 길이가 불필요하게 커질 수 있다. 이를 위해서 k8s에서는 kubectl 1.14 버전부터 사용할 수 있는 `kustomize` 기능을 제공하며, 이를 사용하면 편하게 컨피그맵을 생성할 수 있다.
+
+### [7.2.2] 시크릿 (Secret)
+
+#### [7.2.2.1] 시크릿 사용방법 익히기
+시크릿은 SSH 키, 비밀번호 등과 같이 민감한 정보를 저장하기 위한 용도로 사용되며, 네임스페이스에 종속되는 k8s 오브젝트이다. 
+
+ConfigMap과 유사하기 때문에, `--from-literal` 대신 `--from-file` or `--from-env-file` 옵션을 이용해 파일로부터 값을 읽어와 사용해도 된다.
+
+``` bash
+kubectl create secret generic \
+my-password --from-literal password=1q2w3e4r
+```
+
+``` bash
+# file을 이용한 적용
+echo mypassword > pw1 && echo yourpassword > pw2 &&
+kubectl create secret generic \
+our-password --from-file pw1 --from-file pw2
+```
+
+`kubectl describe secret` 을 통해서 자세히 조사하면, K-V 에서 값에 해당하는 부분이 이상한 값으로 변형되어 있다. 이는 시크릿에 값을 저장할 때, k8s가 기본적으로 base64 로 값을 인코딩하기 때문이다.
+
+`echo ${password} | base64 -d` 를 통해서, data부분의 값을 base64로 디코딩하면 다시 복호화를 할 수 있다.
+
+YML 파일로부터 시크릿을 생성할 때도 데이터의 값에 base64로 인코딩이 된 문자열을 사용해야 한다.
