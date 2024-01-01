@@ -152,3 +152,92 @@ our-password --from-file pw1 --from-file pw2
 `echo ${password} | base64 -d` 를 통해서, data부분의 값을 base64로 디코딩하면 다시 복호화를 할 수 있다.
 
 YML 파일로부터 시크릿을 생성할 때도 데이터의 값에 base64로 인코딩이 된 문자열을 사용해야 한다.
+
+``` yml
+# volume-mount-secret.yml
+spec:
+    ...
+    volumeMounts:                 
+    - name: secret-volume         # volumes에서 정의한 시크릿 볼륨 이름
+      mountPath: /etc/secret      # 시크릿의 데이터가 위치할 경로
+  
+  volumes:
+  - name: secret-volume           # 시크릿 볼륨 이름
+    secret:
+      secretName: our-password    # 키-값 쌍을 가져올 시크릿 이름
+    
+---
+# selective-mount-secret.yml
+spec:
+    ...
+    volumeMounts:
+    - name: secret-volume
+      mountPath: /etc/secret
+  volumes:
+  - name: secret-volume
+    secret:
+      scretName: our-password     # our-password라는 시크릿을 사용
+      items:                      # 시크릿에서 가져올 키-값의 목록
+      - key: pw1                  # pw1라는 키에 대응하는 값을 사용
+        path: password1           # 최종 파일의 경로
+
+```
+
+
+#### [7.2.2.2] 이미지 레지스트리 접근을 위한 docker-registry 타입의 시크릿 사용하기
+시크릿은 사용목적에 따라 여러 종류의 시크릿을 사용할 수도 있다. 
+
+``` bash
+# 시크릿 종류 조회
+kubectl get secrets
+```
+
+기본적으로 타입을 지정하지 않으면 `Opaque` 타입으로 생성한다.  secret을 생성할 떄 `generic` 이라고 명시했던 것이 바로 `Opaque` 타입에 해당하는 종류이다.
+
+시크릿을 generic 타입으로 생성할때는 컨피그맵과 큰 차이가 느껴지지 않을 수 있다. 그러나 시크릿은 컨피그맵과 달리 사용 용도에 따라 여러종류를 설정할 수 있으며, 그 중 하나가 비공개 레지스트리(Private Registry)에 접근할 때 사용하는 인증설정 시크릿이다.
+
+> k8s의 디플로이먼트 등을 이용해 파드를 생성할 때 yml파일에 정의된 이미지가 로컬에 존재하지 않으면 자동으로 이미지를 받아온다.
+>
+> 이때 사설레지스트리 또는 도커허브를 이용하게 되며, 사설레지스트리에서 인증 절차가 필요하게 된다. k8s에서는 `docker login` 명령어 대신 레지스트리의 인증 정보를 저장하는 별도의 시크릿을 생성해 사용한다. 
+
+레지스트리 인증을 위한 시크릿 생성방법에는 두 가지가 있다.
+1. `docker login` 명령어로 로그인에 성공했을 때, 도커엔진이 자동으로 생성하는 ~/.docker/config.json파일을 이용
+
+    `config.json` 파일에는 인증을 위한 정보가 담겨있기 때문에 이를 그대로 시크릿으로 가져와 사용하면 된다.
+
+    ``` bash
+    kubectl create secret generic registry-auth \
+    --from-file=.dockerconfigjson=/root/.docker/config.json \
+    --type=kubernetes.io/dockerconfig.json
+    ```
+
+2. 시크릿을 생성하는 명령어에서 직접 로그인 인증 정보를 명시
+
+    각 옵션에 적절한 인자를 입력하여 인증 정보를 명시한다. `--docker-username`과 `--docker-password` 옵션은 로그인 이름과 비밀번호를 입력하는 필수 옵션이다.
+
+    ``` bash
+    kubectl create secret docker-registry registry-auth-by-cmd \
+    --docker-username=user \
+    --docker-password=p@ssw@rd \
+    --docker-server=test.registry.com
+
+    ```
+
+    `--docker-server` 는 필수 옵션이 아니며, 필요에 따라 사용하면 된다. `--docker-server`옵션을 사용하지 않으면 기본적으로 도커허브(docker.io)를 사용하도록 설정되지만, 다른 사설 레지스트리를 사용하려면 --docker-server 옵션에 해당하는 서버의 주소 또는 도메인을 입력하면 된다.
+
+이렇게 생성된 시크릿을 사용하기 위해서는 YML 파일에서 `imagePullSecret` 항목을 정의한다.
+``` yml
+# 사설 secret 적용
+
+spec:
+  containers:
+    ...
+
+
+  imagePullSecret:
+  - name: registry-auth-registry
+```
+> YML파일에 명시된 도커 이미지가 워커 서버에 존재하지 않을 때만 이미지를 받아오도록 설정돼 있지만, imagePullPolicy 항목을 통해 이미지를 받아오는 설정을 변경할 수 있다.
+
+#### [7.2.2.3] TLS 키를 저장할 수 있는 TLS 타입의 시크릿 사용하기
+시크릿은 TLS 연결에 사용되는 공개키, 비밀키 등을 k8s에 자체적으로 저장할 수 있도록 tls타입을 지원한다.
