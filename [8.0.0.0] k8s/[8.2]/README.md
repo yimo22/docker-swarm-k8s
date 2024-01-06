@@ -65,3 +65,20 @@ LoadBalancer 타입에 DNS이름을 할당함으로써 Nginx 인그레스 컨트
 > 인그레스 컨트롤러에 의해 요청이 최종적으로 도착할 디플로이먼트의 서비스는 어떤 타입이든지 상관은 없다.
 >
 > 다만, 외부에 서비스를 노출할 필요가 없다면 ClusterIP타입을 사용하는게 좋다. 
+
+> 추가 동작확인
+> 
+> 1. `kubectl get po,svc -n ingress-nginx` 를 통해서 해당하는 정보들을 조회한다.
+> 
+>     조회를 하면, pod들과 3가지의 service 를 확인할 수 있다. 각 service의 타입은 [LoadBalacner | ClusterIP | NodePort] 이다. 이때 Cloud를 사용하지 않을 경우, LoadBalancer 타입의 svc는 <pending> 으로 표시된다.
+>
+> 2. `curl <CLUSTER-IP>/echo-hostname` 명령어를 통해 조회
+>
+>     나는 On-premise 환경에서 k8s 클러스터를 구축했기 때문에, `NodePort` 에 있는 ClusterIP를 적용했다. 
+>
+>     이렇게 적용하고 조회를 하면, 404 NOTFOUND 로 구성된 HTML 페이지를 응답받는다. 이는 인그레스를 생성할 때 Nginx 인그레스 컨트롤러에 `도메인이름` 으로 접근했을 떄만 응답을 처리하도록 설정했기 때문이다. 따라서 해당 도메인이 아닌 다른 도메인 이름으로 접근할 때는 Nginx 인그레스 컨트롤러가 해당 요청을 처리하지 않는다.
+>
+>     이를 위해 `/etc/hosts` 에서 해당되는 `<CLUSTER_IP> <HOST_NAME>` 형식으로 도메인을 추가하여 테스트를 계속 진행한다.
+>
+> 3. ` curl --resolve <HOST-NAME>:31000:<노드 중 IP> <HOST-NAME>/echo-hostname` 으로 정상작동 조회
+
