@@ -1,4 +1,4 @@
-## 인그레스의 세부 기능 : annotation을 이용한 설정
+## [8.3] 인그레스의 세부 기능 : annotation을 이용한 설정
 
 ``` yaml
 # test yaml
